@@ -106,6 +106,13 @@ class AnalogInput(QWidget):
             text = "no value"
         self._line_edit.setText(text)
 
+    @inmain_decorator(True)
+    def set_buffer(self, data):
+        if data is not None and self.win is not None:
+            # Method 1 - sending data using IPC
+            self.to_child.put('data')
+            self.to_child.put(data)
+
     def _check_plot_window(self):
         while self.win is not None:
             time.sleep(0.1)
@@ -126,17 +133,29 @@ class AnalogInput(QWidget):
             self.to_child.put('focus')
 
 
-# A simple test!
 if __name__ == '__main__':
+
+    def simulate_data_stream(analog_input_widget):
+        import random
+        import numpy as np
+        while True:
+            data = np.random.rand(100).astype(np.float64)
+            analog_input_widget.set_buffer(data)
+
 
     qapplication = QApplication(sys.argv)
 
     window = QWidget()
     layout = QVBoxLayout(window)
     button = AnalogInput('AI1', 'AI1')
+    button.set_value(4)
 
     layout.addWidget(button)
 
     window.show()
+
+    data_thread = threading.Thread(target=simulate_data_stream, args=(button,))
+    data_thread.daemon = True
+    data_thread.start()
 
     sys.exit(qapplication.exec_())
