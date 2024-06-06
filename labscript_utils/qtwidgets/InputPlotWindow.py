@@ -86,7 +86,7 @@ class PlotWindow(Process):
 
         self.plot_win.plot(self.data, clear=True)
 
-class MainClass:
+class TestClass:
     def __init__(self):
         self.win = None
         self.context = zmq.Context()
@@ -113,7 +113,7 @@ class MainClass:
             self.socket.send_multipart([message, data_bytes])
 
 if __name__ == "__main__":
-    main_obj = MainClass()
+    main_obj = TestClass()
     main_obj._connection_name = "test_conn"
     main_obj._hardware_name = "test_hw"
     main_obj._device_name = "test_dev"
