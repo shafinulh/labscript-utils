@@ -8,16 +8,19 @@ from labscript_utils.labconfig import LabConfig
 import threading
 import time
 
-# maximum amount of datapoints to be plotted at once
-MAX_DATA = 1000000
-
 class PlotWindow(Process):
     def run(self):  
-        self.data = {}
         self.plot_win = pg.GraphicsLayoutWidget(title="Input Plot Window")
         self.plots = {}
+        self.data = {}
         self.plot_lines = {}
-        self.line_colors = {}
+        
+        self.line_colors = ['b', 'r', 'c', 'g', 'y']
+
+
+        # maximum amount of datapoints to be plotted at once
+        # TODO: Allow user to set this param
+        self.MAX_DATA = 100000
 
         self.cmd_thread = threading.Thread(target=self._cmd_loop)
         self.cmd_thread.daemon = True
@@ -30,16 +33,18 @@ class PlotWindow(Process):
         self.to_parent.put("closed")
 
     @inmain_decorator(True)
-    def add_plot(self, identifier, line_id):
-        if identifier not in self.plots:
-            plot = self.plot_win.addPlot(title=f"{identifier}")
+    def add_plot(self, plot_id, line_id):
+        if plot_id not in self.plots:
+            plot = self.plot_win.addPlot(title=f"{plot_id}")
             plot.addLegend()
-            self.plots[identifier] = plot
-            self.data[identifier] = {}
+            self.plots[plot_id] = plot
+            self.data[plot_id] = {}
 
-        self.data[identifier][line_id] = np.array([], dtype=np.float32)
-        self.line_colors[line_id] = self.get_next_color() 
-        self.plots[identifier].plot(pen=self.line_colors[line_id], name=line_id)
+        self.data[line_id] = np.array([], dtype=np.float32)
+        
+        num_plot_lines = len(list(self.plot_lines.keys()))
+        cur_colour = self.line_colors[num_plot_lines]
+        self.plot_lines[line_id] = self.plots[plot_id].plot(pen=pg.mkPen(cur_colour), name=line_id)
 
         self.plot_win.nextRow()
 
@@ -48,18 +53,19 @@ class PlotWindow(Process):
             cmd = self.from_parent.get()
             if cmd.startswith('add_plot'):  
                 parts = cmd.split()
-                self.add_plot(parts[1], parts[2])
-            elif cmd == 'focus':
-                self.setTopLevelWindow()
+                plot_id, line_id = parts[1], parts[2]
+                self.add_plot(plot_id, line_id)
+            elif cmd == 'get_plots':
+                open_plot_ids = list(self.plots.keys())
+                self.to_parent.put(open_plot_ids)
             elif cmd.startswith('data'):
                 parts = cmd.split()
-                identifier, line_id = parts[1], parts[2]
+                plot_id, line_id = parts[1], parts[2]
                 data = self.from_parent.get()
-                self.update_plot(identifier, line_id, np.array(data, dtype=np.float32))
-            elif cmd == 'get_plots':
-                open_plot_identifiers = list(self.plots.keys())
-                self.to_parent.put(open_plot_identifiers)
-
+                self.update_plot(plot_id, line_id, np.array(data, dtype=np.float32))
+            elif cmd == 'focus':
+                self.setTopLevelWindow()
+    
     @inmain_decorator(False)
     def setTopLevelWindow(self):
         self.plot_win.show()
@@ -67,24 +73,29 @@ class PlotWindow(Process):
         self.plot_win.raise_()
 
     @inmain_decorator(False)
-    def update_plot(self, identifier, line_id, new_data):
-        if identifier not in self.data:
-            self.data[identifier] = {}
+    def update_plot(self, plot_id, line_id, new_data):
+        if line_id not in self.data:
+            raise Exception("Requested plot line_id is not added")
         
-        if line_id not in self.data[identifier]:
-            self.data[identifier][line_id] = np.array([], dtype=np.float64)
-
-        self.data[identifier][line_id] = new_data
-        plot_item = self.plots[identifier]
-        plot_item.clear()
-        for line, data_points in self.data[identifier].items():
-            plot_item.plot(data_points, pen=self.line_colors[line], name=line)
-    
-    def get_next_color(self):
-        """Generate a new color for the next line."""
-        num_colors = len(self.line_colors)
-        color = QtGui.QColor.fromHsvF((num_colors * 0.618033988749895) % 1.0, 1.0, 1.0)
-        return QtGui.QPen(color)
+        if self.data[line_id].size < self.MAX_DATA:
+            if new_data.size + self.data[line_id].size <= self.MAX_DATA:
+                self.data[line_id] = np.append(self.data[line_id], new_data)
+            else:
+                if new_data.size < self.MAX_DATA:
+                    self.data[line_id] = np.roll(self.data[line_id], -new_data.size)
+                    self.data[line_id][self.data[line_id].size - new_data.size:self.data[line_id].size] = new_data
+                else:
+                    self.data[line_id] = new_data[new_data.size - self.MAX_DATA:new_data.size]
+        else:
+            if new_data.size <= self.data[line_id].size:
+                self.data[line_id] = np.roll(self.data[line_id], -new_data.size)
+                self.data[line_id][self.data[line_id].size - new_data.size:self.data[line_id].size] = new_data
+            else:
+                self.data[line_id] = new_data[new_data.size - self.data[line_id].size:new_data.size]
+        
+        self.data[line_id] = self.data[line_id]
+        print(self.data[line_id].size)
+        self.plot_lines[line_id].setData(self.data[line_id])
 
 # TODO: Update unit tests
 class TestClass:
