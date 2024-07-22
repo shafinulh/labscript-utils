@@ -2,25 +2,81 @@ from zprocess import Process
 import pyqtgraph as pg
 import numpy as np
 from qtutils import inmain_decorator
+from qtutils.qt import QtWidgets, QtCore
 import qtutils.qt.QtGui as QtGui
 import zmq
 from labscript_utils.labconfig import LabConfig
 import threading
 import time
 
+class CustomLegend(QtWidgets.QWidget):
+    def __init__(self):
+        super().__init__()
+        self.items = []
+        self.layout = QtWidgets.QVBoxLayout()
+        self.setLayout(self.layout)
+        
+        header = QtWidgets.QLabel("Legend")
+        header.setStyleSheet("font-weight: bold; font-size: 14px;")
+        self.layout.addWidget(header)
+    
+        self.setStyleSheet("background-color: #f0f0f0;") 
+
+    def addItem(self, item, name, color):
+        row = QtWidgets.QWidget()
+        row_layout = QtWidgets.QHBoxLayout()
+        row.setLayout(row_layout)
+        
+        color_indicator = QtWidgets.QLabel()
+        color_indicator.setFixedSize(20, 20)
+        color_indicator.setStyleSheet(f"background-color: {color};")
+        row_layout.addWidget(color_indicator)
+        
+        cb = QtWidgets.QCheckBox()
+        cb.setChecked(True)
+        cb.stateChanged.connect(lambda state, item=item: self.togglePlot(state, item))
+        row_layout.addWidget(cb)
+        
+        label = QtWidgets.QLabel(name)
+        row_layout.addWidget(label)
+        
+        row_layout.addStretch()
+        self.layout.addWidget(row)
+        self.items.append((item, label, cb))
+
+    def togglePlot(self, state, item):
+        item.setVisible(state == QtCore.Qt.Checked)
+
 class PlotWindow(Process):
-    def run(self):  
-        self.plot_win = pg.GraphicsLayoutWidget(title="Input Plot Window")
+    def run(self):
+        self.plot_win = None
         self.plots = {}
         self.data = {}
         self.plot_lines = {}
+        self.legends = {}
         
-        self.line_colors = ['b', 'r', 'c', 'g', 'y']
+        self.line_colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd'] 
 
 
         # maximum amount of datapoints to be plotted at once
         # TODO: Allow user to set this param
         self.MAX_DATA = 100000
+        
+        app = QtWidgets.QApplication([])
+        self.plot_win = QtWidgets.QMainWindow()
+        self.plot_win.setWindowTitle("Input Plot Window")
+        central_widget = QtWidgets.QWidget()
+        self.plot_win.setCentralWidget(central_widget)
+        main_layout = QtWidgets.QHBoxLayout()
+        central_widget.setLayout(main_layout)
+
+        self.plot_widget = pg.GraphicsLayoutWidget()
+        self.legend_widget = QtWidgets.QWidget()
+        self.legend_layout = QtWidgets.QVBoxLayout()
+        self.legend_widget.setLayout(self.legend_layout)
+
+        main_layout.addWidget(self.legend_widget)
+        main_layout.addWidget(self.plot_widget)
 
         self.cmd_thread = threading.Thread(target=self._cmd_loop)
         self.cmd_thread.daemon = True
@@ -28,25 +84,29 @@ class PlotWindow(Process):
 
         self.plot_win.show()
 
-        QtGui.QGuiApplication.instance().exec_()
+        app.exec_()
 
         self.to_parent.put("closed")
 
     @inmain_decorator(True)
     def add_plot(self, plot_id, line_id):
         if plot_id not in self.plots:
-            plot = self.plot_win.addPlot(title=f"{plot_id}")
-            plot.addLegend()
+            plot = self.plot_widget.addPlot(title=f"{plot_id}")
+            legend = CustomLegend()
+            self.legends[plot_id] = legend
+            self.legend_layout.addWidget(legend)
             self.plots[plot_id] = plot
-            self.data[plot_id] = {}
 
         self.data[line_id] = np.array([], dtype=np.float32)
         
         num_plot_lines = len(list(self.plot_lines.keys()))
-        cur_colour = self.line_colors[num_plot_lines]
-        self.plot_lines[line_id] = self.plots[plot_id].plot(pen=pg.mkPen(cur_colour), name=line_id)
+        cur_colour = self.line_colors[num_plot_lines % len(self.line_colors)]
+        plot_line = self.plots[plot_id].plot(pen=pg.mkPen(cur_colour, width=2), name=line_id)
+        self.plot_lines[line_id] = plot_line
 
-        self.plot_win.nextRow()
+        self.legends[plot_id].addItem(plot_line, line_id, cur_colour)
+
+        self.plot_widget.nextRow()
 
     def _cmd_loop(self):
         while True:
