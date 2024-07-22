@@ -11,81 +11,82 @@ import time
 # maximum amount of datapoints to be plotted at once
 MAX_DATA = 1000000
 
-
 class PlotWindow(Process):
-    def run(self, connection_name, hardware_name, device_name):
-        self._connection_name = connection_name
-        self._hardware_name = hardware_name
-        self._device_name = device_name
-        self.data = np.array([], dtype=np.float64)
-
-        if self._connection_name != '-':
-            title = "{} ({})".format(self._hardware_name, self._connection_name)
-        else:
-            title = "{}".format(self._hardware_name)
-        self.plot_win = pg.plot([], title=title)
-
-        broker_pub_port = int(LabConfig().get('ports', 'BLACS_Broker_Pub'))
-        context = zmq.Context()
-        self.socket = context.socket(zmq.SUB)
-        self.socket.connect("tcp://127.0.0.1:%d" % broker_pub_port)
-        self.socket.setsockopt(zmq.SUBSCRIBE, "{} {}\0".format(self._device_name, self._hardware_name).encode('utf-8'))
-
-        self.analog_in_thread = threading.Thread(target=self._analog_read_loop)
-        self.analog_in_thread.daemon = True
-        self.analog_in_thread.start()
+    def run(self):  
+        self.data = {}
+        self.plot_win = pg.GraphicsLayoutWidget(title="Input Plot Window")
+        self.plots = {}
+        self.plot_lines = {}
+        self.line_colors = {}
 
         self.cmd_thread = threading.Thread(target=self._cmd_loop)
         self.cmd_thread.daemon = True
         self.cmd_thread.start()
 
+        self.plot_win.show()
+
         QtGui.QGuiApplication.instance().exec_()
 
         self.to_parent.put("closed")
 
-    def _analog_read_loop(self):
-        while True:
-            # Method 2 - Sockets
-            devicename_and_channel, data = self.socket.recv_multipart()
-            self.update_plot(np.frombuffer(memoryview(data), dtype=np.float64))
-            time.sleep(0.001)
+    @inmain_decorator(True)
+    def add_plot(self, identifier, line_id):
+        if identifier not in self.plots:
+            plot = self.plot_win.addPlot(title=f"{identifier}")
+            plot.addLegend()
+            self.plots[identifier] = plot
+            self.data[identifier] = {}
+
+        self.data[identifier][line_id] = np.array([], dtype=np.float32)
+        self.line_colors[line_id] = self.get_next_color() 
+        self.plots[identifier].plot(pen=self.line_colors[line_id], name=line_id)
+
+        self.plot_win.nextRow()
 
     def _cmd_loop(self):
         while True:
             cmd = self.from_parent.get()
-            if cmd == 'focus':
+            if cmd.startswith('add_plot'):  
+                parts = cmd.split()
+                self.add_plot(parts[1], parts[2])
+            elif cmd == 'focus':
                 self.setTopLevelWindow()
-            elif cmd == 'data':
-                # Method 1 - IPC
+            elif cmd.startswith('data'):
+                parts = cmd.split()
+                identifier, line_id = parts[1], parts[2]
                 data = self.from_parent.get()
-                self.update_plot(np.array(data, dtype=np.float32))
-                time.sleep(0.001)
+                self.update_plot(identifier, line_id, np.array(data, dtype=np.float32))
+            elif cmd == 'get_plots':
+                open_plot_identifiers = list(self.plots.keys())
+                self.to_parent.put(open_plot_identifiers)
 
     @inmain_decorator(False)
     def setTopLevelWindow(self):
-        self.plot_win.win.activateWindow()
-        self.plot_win.win.raise_()
+        self.plot_win.show()
+        self.plot_win.activateWindow()
+        self.plot_win.raise_()
 
     @inmain_decorator(False)
-    def update_plot(self, new_data):
-        if self.data.size < MAX_DATA:
-            if new_data.size + self.data.size <= MAX_DATA:
-                self.data = np.append(self.data, new_data)
-            else:
-                if new_data.size < MAX_DATA:
-                    self.data = np.roll(self.data, -new_data.size)
-                    self.data[self.data.size - new_data.size:self.data.size] = new_data
-                else:
-                    self.data = new_data[new_data.size - MAX_DATA:new_data.size]
-        else:
-            if new_data.size <= self.data.size:
-                self.data = np.roll(self.data, -new_data.size)
-                self.data[self.data.size - new_data.size:self.data.size] = new_data
-            else:
-                self.data = new_data[new_data.size - self.data.size:new_data.size]
+    def update_plot(self, identifier, line_id, new_data):
+        if identifier not in self.data:
+            self.data[identifier] = {}
+        
+        if line_id not in self.data[identifier]:
+            self.data[identifier][line_id] = np.array([], dtype=np.float64)
 
-        self.plot_win.plot(self.data, clear=True)
+        self.data[identifier][line_id] = new_data
+        plot_item = self.plots[identifier]
+        plot_item.clear()
+        for line, data_points in self.data[identifier].items():
+            plot_item.plot(data_points, pen=self.line_colors[line], name=line)
+    
+    def get_next_color(self):
+        """Generate a new color for the next line."""
+        num_colors = len(self.line_colors)
+        color = QtGui.QColor.fromHsvF((num_colors * 0.618033988749895) % 1.0, 1.0, 1.0)
+        return QtGui.QPen(color)
 
+# TODO: Update unit tests
 class TestClass:
     def __init__(self):
         self.win = None
