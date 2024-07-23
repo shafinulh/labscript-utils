@@ -154,6 +154,13 @@ class AnalogInput(QWidget):
         self._line_edit.setText(text)
     
     @inmain_decorator(True)
+    def set_max_data(self, data):
+        if data is not None and self.plot is not None:
+            # Method 1 - sending data using IPC
+            self.to_child.put(f'MAX_DATA {self.plot_identifier}')
+            self.to_child.put(data)
+
+    @inmain_decorator(True)
     def set_buffer(self, data):
         if data is not None and self.plot is not None:
             # Method 1 - sending data using IPC
@@ -192,7 +199,6 @@ class AnalogInput(QWidget):
         if not plot_identifiers:
             self.prompt_plot_identifier()
             return
-        print("here")
         dialog = PlotSelectionDialog(self, plot_identifiers)
         if dialog.exec_() == QDialog.Accepted:
             plot_identifier = dialog.selected_plot()

@@ -60,7 +60,7 @@ class PlotWindow(Process):
 
         # maximum amount of datapoints to be plotted at once
         # TODO: Allow user to set this param
-        self.MAX_DATA = 100000
+        self.MAX_DATA = {}
         
         app = QtWidgets.QApplication([])
         self.plot_win = QtWidgets.QMainWindow()
@@ -97,12 +97,13 @@ class PlotWindow(Process):
             self.legends[plot_id] = legend
             self.legend_layout.addWidget(legend)
             self.plots[plot_id] = plot
+            self.MAX_DATA[plot_id] = 10000
 
         self.data[line_id] = np.array([], dtype=np.float32)
         
         num_plot_lines = len(list(self.plot_lines.keys()))
         cur_colour = self.line_colors[num_plot_lines % len(self.line_colors)]
-        plot_line = self.plots[plot_id].plot(pen=pg.mkPen(cur_colour, width=2), name=line_id)
+        plot_line = self.plots[plot_id].plot(pen=pg.mkPen(cur_colour), name=line_id)
         self.plot_lines[line_id] = plot_line
 
         self.legends[plot_id].addItem(plot_line, line_id, cur_colour)
@@ -124,6 +125,12 @@ class PlotWindow(Process):
                 plot_id, line_id = parts[1], parts[2]
                 data = self.from_parent.get()
                 self.update_plot(plot_id, line_id, np.array(data, dtype=np.float32))
+            elif cmd.startswith('MAX_DATA'):
+                parts = cmd.split()
+                plot_id = parts[1]
+                max_data = self.from_parent.get()
+                print(f"there {max_data}")
+                self.MAX_DATA[plot_id] = max_data
             elif cmd == 'focus':
                 self.setTopLevelWindow()
     
@@ -138,23 +145,26 @@ class PlotWindow(Process):
         if line_id not in self.data:
             raise Exception("Requested plot line_id is not added")
         
-        if self.data[line_id].size < self.MAX_DATA:
-            if new_data.size + self.data[line_id].size <= self.MAX_DATA:
+        MAX_DATA = self.MAX_DATA[plot_id]
+
+        if self.data[line_id].size < MAX_DATA:
+            if new_data.size + self.data[line_id].size <= MAX_DATA:
                 self.data[line_id] = np.append(self.data[line_id], new_data)
             else:
-                if new_data.size < self.MAX_DATA:
+                if new_data.size < MAX_DATA:
                     self.data[line_id] = np.roll(self.data[line_id], -new_data.size)
                     self.data[line_id][self.data[line_id].size - new_data.size:self.data[line_id].size] = new_data
                 else:
-                    self.data[line_id] = new_data[new_data.size - self.MAX_DATA:new_data.size]
-        else:
+                    self.data[line_id] = new_data[new_data.size - MAX_DATA:new_data.size]
+        else:    
             if new_data.size <= self.data[line_id].size:
                 self.data[line_id] = np.roll(self.data[line_id], -new_data.size)
                 self.data[line_id][self.data[line_id].size - new_data.size:self.data[line_id].size] = new_data
             else:
-                self.data[line_id] = new_data[new_data.size - self.data[line_id].size:new_data.size]
+                # self.data[line_id] = new_data[new_data.size - self.data[line_id].size:new_data.size]
+                self.data[line_id] = new_data[:MAX_DATA]
         
-        self.data[line_id] = self.data[line_id]
+        # print(f"{MAX_DATA} {self.data[line_id].size}")
         self.plot_lines[line_id].setData(self.data[line_id])
 
 # TODO: Update unit tests
