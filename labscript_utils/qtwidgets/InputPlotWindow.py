@@ -75,8 +75,9 @@ class PlotWindow(Process):
         self.legend_layout = QtWidgets.QVBoxLayout()
         self.legend_widget.setLayout(self.legend_layout)
 
-        main_layout.addWidget(self.legend_widget)
-        main_layout.addWidget(self.plot_widget)
+        main_layout.addWidget(self.legend_widget, 20)
+        main_layout.addWidget(self.plot_widget, 80)
+        self.legend_widget.setMinimumWidth(150)
 
         self.cmd_thread = threading.Thread(target=self._cmd_loop)
         self.cmd_thread.daemon = True
@@ -154,7 +155,6 @@ class PlotWindow(Process):
                 self.data[line_id] = new_data[new_data.size - self.data[line_id].size:new_data.size]
         
         self.data[line_id] = self.data[line_id]
-        print(self.data[line_id].size)
         self.plot_lines[line_id].setData(self.data[line_id])
 
 # TODO: Update unit tests
