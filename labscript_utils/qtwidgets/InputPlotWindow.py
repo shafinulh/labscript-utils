@@ -9,7 +9,7 @@ from labscript_utils.labconfig import LabConfig
 import threading
 import time
 
-class CustomLegend(QtWidgets.QWidget):
+class Legend(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
         self.items = []
@@ -48,6 +48,16 @@ class CustomLegend(QtWidgets.QWidget):
         item.setVisible(state == QtCore.Qt.Checked)
 
 class PlotWindow(Process):
+    instance = None
+    
+    @classmethod
+    def Instance(cls):
+        if cls.instance == None:
+            win = PlotWindow()
+            win.start()
+            cls.instance = win
+        return cls.instance
+    
     def run(self):
         self.plot_win = None
         self.plots = {}
@@ -57,9 +67,7 @@ class PlotWindow(Process):
         
         self.line_colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd'] 
 
-
-        # maximum amount of datapoints to be plotted at once
-        # TODO: Allow user to set this param
+        # Max Data points per plot
         self.MAX_DATA = {}
         
         app = QtWidgets.QApplication([])
@@ -87,13 +95,13 @@ class PlotWindow(Process):
 
         app.exec_()
 
-        self.to_parent.put("closed")
+        # self.to_parent.put("closed") # does not work
 
     @inmain_decorator(True)
     def add_plot(self, plot_id, line_id):
         if plot_id not in self.plots:
             plot = self.plot_widget.addPlot(title=f"{plot_id}")
-            legend = CustomLegend()
+            legend = Legend()
             self.legends[plot_id] = legend
             self.legend_layout.addWidget(legend)
             self.plots[plot_id] = plot
@@ -128,9 +136,8 @@ class PlotWindow(Process):
             elif cmd.startswith('MAX_DATA'):
                 parts = cmd.split()
                 plot_id = parts[1]
-                max_data = self.from_parent.get()
-                print(f"there {max_data}")
-                self.MAX_DATA[plot_id] = max_data
+                MAX_DATA = self.from_parent.get()
+                self.MAX_DATA[plot_id] = MAX_DATA
             elif cmd == 'focus':
                 self.setTopLevelWindow()
     

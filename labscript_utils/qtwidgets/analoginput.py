@@ -57,10 +57,7 @@ class AnalogInput(QWidget):
     def __init__(
         self, 
         device_name, 
-        hardware_name, 
-        plot_process, 
-        to_child, 
-        from_child, 
+        hardware_name,
         connection_name='-', 
         display_name=None, 
         horizontal_alignment=False, 
@@ -72,9 +69,9 @@ class AnalogInput(QWidget):
         self.plot_identifier = None
         self.plot_line_legend_label = f"{device_name}_{hardware_name}"
 
-        self.plot_process = plot_process
-        self.to_child = to_child
-        self.from_child = from_child
+        self.plot_process = None
+        self.to_child = None
+        self.from_child = None
 
         self._device_name = device_name
         self._connection_name = connection_name
@@ -156,14 +153,12 @@ class AnalogInput(QWidget):
     @inmain_decorator(True)
     def set_max_data(self, data):
         if data is not None and self.plot is not None:
-            # Method 1 - sending data using IPC
             self.to_child.put(f'MAX_DATA {self.plot_identifier}')
             self.to_child.put(data)
 
     @inmain_decorator(True)
     def set_buffer(self, data):
         if data is not None and self.plot is not None:
-            # Method 1 - sending data using IPC
             self.to_child.put(f'data {self.plot_identifier} {self.plot_line_legend_label}')
             self.to_child.put(data)
 
@@ -177,10 +172,14 @@ class AnalogInput(QWidget):
 
     def open_plot_window(self):
         if self.plot is None:
+            self.plot_process = PlotWindow().Instance()
+            self.to_child, self.from_child = self.plot_process.to_child, self.plot_process.from_child
+           
             self.to_child.put('get_plots')
             open_plots = self.from_child.get()
             self.show_plot_selection_dialog(open_plots)
-            self.plot_process.to_child.put(f"add_plot {self.plot_identifier} {self.plot_line_legend_label}")
+           
+            self.to_child.put(f"add_plot {self.plot_identifier} {self.plot_line_legend_label}")
             self.plot = True
 
             check_plot_window_thread = threading.Thread(target=self._check_plot_window)
