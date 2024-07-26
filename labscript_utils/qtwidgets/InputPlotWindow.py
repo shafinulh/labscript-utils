@@ -1,4 +1,4 @@
-from zprocess import Process
+from zprocess import Process, Event
 import pyqtgraph as pg
 import numpy as np
 from qtutils import inmain_decorator
@@ -57,8 +57,15 @@ class PlotWindow(Process):
             win.start()
             cls.instance = win
         return cls.instance
+
+    @classmethod
+    def KillInstance(cls):
+        if cls.instance != None:
+            cls.instance = None
+        return
     
     def run(self):
+        self.stop_event = Event("stop", role="post")
         self.plot_win = None
         self.plots = {}
         self.data = {}
@@ -94,8 +101,8 @@ class PlotWindow(Process):
         self.plot_win.show()
 
         app.exec_()
-
-        # self.to_parent.put("closed") # does not work
+        
+        self.stop_event.post("plotting_process", "closed")
 
     @inmain_decorator(True)
     def add_plot(self, plot_id, line_id):

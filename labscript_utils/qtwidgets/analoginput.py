@@ -19,6 +19,8 @@ from qtutils.qt.QtWidgets import *
 from qtutils import *
 import qtutils.icons
 
+from zprocess import Event
+
 import threading
 import time
 from labscript_utils.qtwidgets.InputPlotWindow import PlotWindow
@@ -65,18 +67,17 @@ class AnalogInput(QWidget):
     ):
         QWidget.__init__(self, parent)
 
-        self.plot = None
-        self.plot_identifier = None
-        self.plot_line_legend_label = f"{device_name}_{hardware_name}"
-
-        self.plot_process = None
-        self.to_child = None
-        self.from_child = None
-
         self._device_name = device_name
         self._connection_name = connection_name
         self._hardware_name = hardware_name
-        self.win = None
+        
+        self.plot = None
+        self.to_child = None
+        self.from_child = None
+        
+        self.plot_process = None
+        self.plot_identifier = None
+        self.plot_line_legend_label = f"{device_name}_{hardware_name}"
 
         label_text = (self._hardware_name + '\n' + self._connection_name) if display_name is None else display_name
         self._label = QLabel(label_text)
@@ -164,24 +165,29 @@ class AnalogInput(QWidget):
 
     def _check_plot_window(self):
         while self.plot is not None:
-            time.sleep(0.1)
-            # if self.from_child.get() == "closed":
-            #     self.plot = None
-            #     self.to_child = None
-            #     self.from_child = None
+            event_signal = self.stop_event.wait("plotting_process")
+            if event_signal == "closed":
+                self.plot_process.KillInstance()
+                self.plot = None
+                self.plot_process = None
+                self.plot_identifier = None
+                self.to_child = None
+                self.from_child = None
 
     def open_plot_window(self):
         if self.plot is None:
+            self.stop_event = Event("stop", role="wait")
+
             self.plot_process = PlotWindow().Instance()
             self.to_child, self.from_child = self.plot_process.to_child, self.plot_process.from_child
-           
+            
             self.to_child.put('get_plots')
             open_plots = self.from_child.get()
             self.show_plot_selection_dialog(open_plots)
            
             self.to_child.put(f"add_plot {self.plot_identifier} {self.plot_line_legend_label}")
+            
             self.plot = True
-
             check_plot_window_thread = threading.Thread(target=self._check_plot_window)
             check_plot_window_thread.daemon = True
             check_plot_window_thread.start()
