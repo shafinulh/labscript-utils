@@ -154,14 +154,23 @@ class AnalogInput(QWidget):
     @inmain_decorator(True)
     def set_max_data(self, data):
         if data is not None and self.plot is not None:
-            self.to_child.put(f'MAX_DATA {self.plot_identifier}')
-            self.to_child.put(data)
+            ipc_msg = {
+                'cmd': 'set_MAX_DATA',
+                'plot_id': self.plot_identifier,
+                'data': data
+            }
+            self.to_child.put(ipc_msg)
 
     @inmain_decorator(True)
     def set_buffer(self, data):
         if data is not None and self.plot is not None:
-            self.to_child.put(f'data {self.plot_identifier} {self.plot_line_legend_label}')
-            self.to_child.put(data)
+            ipc_msg = {
+                'cmd': "update_plot",
+                'plot_id': self.plot_identifier,
+                'line_id': self.plot_line_legend_label,
+                'data': data
+            }
+            self.to_child.put(ipc_msg)
 
     def _check_plot_window(self):
         while self.plot is not None:
@@ -181,18 +190,25 @@ class AnalogInput(QWidget):
             self.plot_process = PlotWindow().Instance()
             self.to_child, self.from_child = self.plot_process.to_child, self.plot_process.from_child
             
-            self.to_child.put('get_plots')
+            ipc_msg ={'cmd': 'get_plots'}
+            self.to_child.put(ipc_msg)
             open_plots = self.from_child.get()
             self.show_plot_selection_dialog(open_plots)
-           
-            self.to_child.put(f"add_plot {self.plot_identifier} {self.plot_line_legend_label}")
+
+            ipc_msg = {
+                'cmd': "add_plot",
+                'plot_id': self.plot_identifier,
+                'line_id': self.plot_line_legend_label,
+            }
+            self.to_child.put(ipc_msg)
             
             self.plot = True
             check_plot_window_thread = threading.Thread(target=self._check_plot_window)
             check_plot_window_thread.daemon = True
             check_plot_window_thread.start()
         else:
-            self.to_child.put('focus')
+            ipc_msg = {'cmd': 'get_plots'}
+            self.to_child.put(ipc_msg)
     
     def prompt_plot_identifier(self):
         text, ok = QInputDialog.getText(self, 'Input Plot Identifier', 'Enter plot identifier:')
@@ -236,8 +252,8 @@ class AnalogInputTest(QWidget):
         def update_data():
             while True:
                 self.ai1.set_value(np.random.rand())
-                self.ai2.set_value(np.sin(time.time()))
-                self.ai3.set_value(np.cos(time.time()))
+                self.ai2.set_value(np.random.rand())
+                self.ai3.set_value(np.random.rand())
 
                 # set_buffer updates only occur if plots are open
                 self.ai1.set_buffer(np.random.rand(10000))

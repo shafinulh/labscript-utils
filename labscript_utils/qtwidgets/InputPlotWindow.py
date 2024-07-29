@@ -127,25 +127,18 @@ class PlotWindow(Process):
 
     def _cmd_loop(self):
         while True:
-            cmd = self.from_parent.get()
-            if cmd.startswith('add_plot'):  
-                parts = cmd.split()
-                plot_id, line_id = parts[1], parts[2]
-                self.add_plot(plot_id, line_id)
-            elif cmd == 'get_plots':
+            msg = self.from_parent.get()
+            if msg['cmd'] == 'add_plot': 
+                self.add_plot(msg['plot_id'], msg['line_id'])
+            elif msg['cmd'] == 'get_plots': 
                 open_plot_ids = list(self.plots.keys())
                 self.to_parent.put(open_plot_ids)
-            elif cmd.startswith('data'):
-                parts = cmd.split()
-                plot_id, line_id = parts[1], parts[2]
-                data = self.from_parent.get()
-                self.update_plot(plot_id, line_id, np.array(data, dtype=np.float32))
-            elif cmd.startswith('MAX_DATA'):
-                parts = cmd.split()
-                plot_id = parts[1]
-                MAX_DATA = self.from_parent.get()
-                self.MAX_DATA[plot_id] = MAX_DATA
-            elif cmd == 'focus':
+            elif msg['cmd'] == 'update_plot':
+                self.update_plot(msg['plot_id'], msg['line_id'], np.array(msg['data'], dtype=np.float32))
+            elif msg['cmd'] == 'set_MAX_DATA': 
+                plot_id = msg['plot_id']
+                self.MAX_DATA[plot_id] = msg['data']
+            elif msg['cmd'] == 'focus': 
                 self.setTopLevelWindow()
     
     @inmain_decorator(False)
@@ -186,15 +179,26 @@ class PlotWindowTest:
 
     def run_test(self):
         # add signals to different plots in the plotting process
-        
-        # NOTE: only signals from devices with the same sampling rate should be added to the same plot
-        self.plot_window.to_child.put('add_plot plot1 line1')
-        self.plot_window.to_child.put('add_plot plot1 line2')
-        self.plot_window.to_child.put('add_plot plot2 line3')
 
-        '''
-        set MAX_DATA points of each plot.
-        
+        # NOTE: only signals from devices with the same sampling rate should be added to the same plot
+        self.plot_window.to_child.put({
+            'cmd': 'add_plot',
+            'plot_id': 'plot1',
+            'line_id': 'line1'
+        })
+        self.plot_window.to_child.put({
+            'cmd': 'add_plot',
+            'plot_id': 'plot1',
+            'line_id': 'line2'
+        })
+        self.plot_window.to_child.put({
+            'cmd': 'add_plot',
+            'plot_id': 'plot2',
+            'line_id': 'line3'
+        })
+
+        # set MAX_DATA points of each plot.
+        '''      
         For Manual Mode, the MAX_DATA should be set according to the max amount
         of time you want to visualize the signal.
         E.g. You want to plot the last 1s of data. 
@@ -205,25 +209,42 @@ class PlotWindowTest:
 
         For Buffered Mode, the MAX_DATA should be set to (shot_length*buffered_sampling_rate) 
         '''
-        self.plot_window.to_child.put('MAX_DATA plot1')
-        self.plot_window.to_child.put(1000)
-        self.plot_window.to_child.put('MAX_DATA plot2')
-        self.plot_window.to_child.put(2500)
+        self.plot_window.to_child.put({
+            'cmd': 'set_MAX_DATA',
+            'plot_id': 'plot1',
+            'data': 1000
+        })
+        self.plot_window.to_child.put({
+            'cmd': 'set_MAX_DATA',
+            'plot_id': 'plot2',
+            'data': 2500
+        })
 
-        while True:
-            data1 = np.random.rand(100)
-            data2 = np.random.rand(100)
-            data3 = np.random.rand(250)
+        try:
+            while True:
+                data1 = np.random.rand(100)
+                data2 = np.random.rand(100)
+                data3 = np.random.rand(250)
 
-            self.update_plot('plot1', 'line1', data1)
-            self.update_plot('plot1', 'line2', data2)
-            self.update_plot('plot2', 'line3', data3)
+                self.update_plot('plot1', 'line1', data1)
+                self.update_plot('plot1', 'line2', data2)
+                self.update_plot('plot2', 'line3', data3)
 
-            time.sleep(0.1) 
+                time.sleep(0.1) 
+
+        except KeyboardInterrupt:
+            print("Test stopped by user.")
+
+        finally:
+            PlotWindow.KillInstance()
 
     def update_plot(self, plot_id, line_id, data):
-        self.plot_window.to_child.put(f'data {plot_id} {line_id}')
-        self.plot_window.to_child.put(data.tolist())
+        self.plot_window.to_child.put({
+            'cmd': 'update_plot',
+            'plot_id': plot_id,
+            'line_id': line_id,
+            'data': data.tolist()
+        })
 
 if __name__ == "__main__":
     test = PlotWindowTest()
