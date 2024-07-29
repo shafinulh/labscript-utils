@@ -177,47 +177,54 @@ class PlotWindow(Process):
             else:
                 # self.data[line_id] = new_data[new_data.size - self.data[line_id].size:new_data.size]
                 self.data[line_id] = new_data[:MAX_DATA]
-        
-        # print(f"{MAX_DATA} {self.data[line_id].size}")
+
         self.plot_lines[line_id].setData(self.data[line_id])
 
-# TODO: Update unit tests
-class TestClass:
+class PlotWindowTest:
     def __init__(self):
-        self.win = None
-        self.context = zmq.Context()
-        self.socket = self.context.socket(zmq.PUB)
-        self.socket.bind("tcp://127.0.0.1:5555")
+        self.plot_window = PlotWindow.Instance()
 
-    def open_plot_window(self):
-        if self.win is None:
-            self.win = PlotWindow()
-            # Using IPC to send data between processes, instead of sockets
-            self.to_child, self.from_child = self.win.start(self._connection_name, self._hardware_name, self._device_name)
+    def run_test(self):
+        # add signals to different plots in the plotting process
+        
+        # NOTE: only signals from devices with the same sampling rate should be added to the same plot
+        self.plot_window.to_child.put('add_plot plot1 line1')
+        self.plot_window.to_child.put('add_plot plot1 line2')
+        self.plot_window.to_child.put('add_plot plot2 line3')
 
-    def send_data_to_plot_window_IPC(self, data):
-        if self.win is not None:
-            # Method 1 - sending data using IPC
-            self.to_child.put('data')
-            self.to_child.put(data)
+        '''
+        set MAX_DATA points of each plot.
+        
+        For Manual Mode, the MAX_DATA should be set according to the max amount
+        of time you want to visualize the signal.
+        E.g. You want to plot the last 1s of data. 
+            Device1 collects inputs at 1000 samples/sec
+            Device2 collects inputs at 2500 samples/sec
+            Set Device1 signal plots to MAX_DATA = 1000
+            Set Device2 signal plots to MAX_DATA = 2500
 
-    def send_data_to_plot_window_socket(self, data):
-        if self.win is not None:
-            # Method 2 - sending data over socket
-            message = f"{self._device_name} {self._hardware_name}\0".encode('utf-8')
-            data_bytes = data.astype(np.float64).tobytes()
-            self.socket.send_multipart([message, data_bytes])
+        For Buffered Mode, the MAX_DATA should be set to (shot_length*buffered_sampling_rate) 
+        '''
+        self.plot_window.to_child.put('MAX_DATA plot1')
+        self.plot_window.to_child.put(1000)
+        self.plot_window.to_child.put('MAX_DATA plot2')
+        self.plot_window.to_child.put(2500)
+
+        while True:
+            data1 = np.random.rand(100)
+            data2 = np.random.rand(100)
+            data3 = np.random.rand(250)
+
+            self.update_plot('plot1', 'line1', data1)
+            self.update_plot('plot1', 'line2', data2)
+            self.update_plot('plot2', 'line3', data3)
+
+            time.sleep(0.1) 
+
+    def update_plot(self, plot_id, line_id, data):
+        self.plot_window.to_child.put(f'data {plot_id} {line_id}')
+        self.plot_window.to_child.put(data.tolist())
 
 if __name__ == "__main__":
-    test_obj = TestClass()
-    test_obj._connection_name = "test_conn"
-    test_obj._hardware_name = "test_hw"
-    test_obj._device_name = "test_dev"
-    test_obj.open_plot_window()
-
-    # Sending data to the child process
-    # data_to_send = np.random.rand(100)  # Example data
-    while True:
-        data_to_send = np.random.rand(100).astype(np.float64)
-        test_obj.send_data_to_plot_window_IPC(data_to_send)
-        test_obj.send_data_to_plot_window_socket(data_to_send)
+    test = PlotWindowTest()
+    test.run_test()

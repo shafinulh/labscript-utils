@@ -74,7 +74,7 @@ class AnalogInput(QWidget):
         self.plot = None
         self.to_child = None
         self.from_child = None
-        
+
         self.plot_process = None
         self.plot_identifier = None
         self.plot_line_legend_label = f"{device_name}_{hardware_name}"
@@ -212,48 +212,47 @@ class AnalogInput(QWidget):
             else:
                 self.prompt_plot_identifier()
 
+import numpy as np
 
-# A simple test!
-if __name__ == '__main__':
+class AnalogInputTest(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Analog Input Test")
+        self.layout = QVBoxLayout(self)
 
-    def simulate_data_stream(analog_input_widget,min_val,max_val):
-        import numpy as np
-        while True:
-            data = np.random.rand(10000).astype(np.float32)
-            # Scale and shift the values to be between min_val and max_val
-            data = (max_val - min_val) * data + min_val
-            analog_input_widget.set_buffer(data)
-            time.sleep(0.5)
+        # Create multiple AnalogInput widgets
+        self.ai1 = AnalogInput("Device1", "Hardware1", "Connection1")
+        self.ai2 = AnalogInput("Device1", "Hardware2", "Connection2")
+        self.ai3 = AnalogInput("Device2", "Hardware3", "Connection3")
 
-    qapplication = QApplication(sys.argv)
+        self.layout.addWidget(self.ai1)
+        self.layout.addWidget(self.ai2)
+        self.layout.addWidget(self.ai3)
 
-    win = PlotWindow()
-    to_child, from_child = win.start()
+        self.simulate_data()
 
-    window = QWidget()
-    layout = QVBoxLayout(window)
+    # Simulate data for each AnalogInput
+    def simulate_data(self):
+        def update_data():
+            while True:
+                self.ai1.set_value(np.random.rand())
+                self.ai2.set_value(np.sin(time.time()))
+                self.ai3.set_value(np.cos(time.time()))
 
-    button0 = AnalogInput('ni_6363', 'AI0', win, to_child, from_child)
-    button0.set_value(0)
-    button1 = AnalogInput('ni_6363', 'AI1', win, to_child, from_child)
-    button1.set_value(1)
-    button2 = AnalogInput('ni_6363', 'AI2', win, to_child, from_child)
-    button2.set_value(2)
+                # set_buffer updates only occur if plots are open
+                self.ai1.set_buffer(np.random.rand(10000))
+                self.ai2.set_buffer(np.random.rand(10000))
+                self.ai3.set_buffer(np.random.rand(10000))
 
-    layout.addWidget(button0)
-    layout.addWidget(button1)
-    layout.addWidget(button2)
+                time.sleep(0.1)
 
-    window.show()
+        thread = threading.Thread(target=update_data)
+        thread.daemon = True
+        thread.start()
 
-    data_thread = threading.Thread(target=simulate_data_stream, args=(button0, 0, 1))
-    data_thread.daemon = True
-    data_thread.start()
-    data_thread = threading.Thread(target=simulate_data_stream, args=(button1, 4, 5))
-    data_thread.daemon = True
-    data_thread.start()
-    data_thread = threading.Thread(target=simulate_data_stream, args=(button2, 9, 10))
-    data_thread.daemon = True
-    data_thread.start()
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    test_window = AnalogInputTest()
+    test_window.show()
+    sys.exit(app.exec_())
 
-    sys.exit(qapplication.exec_())
