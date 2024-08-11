@@ -60,8 +60,7 @@ class AnalogInput(QWidget):
         self, 
         device_name, 
         hardware_name,
-        connection_name='-', 
-        display_name=None, 
+        connection_name='-',
         horizontal_alignment=False, 
         parent=None
     ):
@@ -77,9 +76,13 @@ class AnalogInput(QWidget):
 
         self.plot_process = None
         self.plot_identifier = None
-        self.plot_line_legend_label = f"{device_name}_{hardware_name}"
-
-        label_text = (self._hardware_name + '\n' + self._connection_name) if display_name is None else display_name
+        if connection_name != '-':
+            self.plot_line_legend_label = f"{device_name}_{connection_name}"
+        else:
+            self.plot_line_legend_label = f"{device_name}_{hardware_name}"
+    
+        label_text = (self._hardware_name + '\n' + self._connection_name)
+        
         self._label = QLabel(label_text)
         self._label.setAlignment(Qt.AlignCenter)
         self._label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Minimum)
