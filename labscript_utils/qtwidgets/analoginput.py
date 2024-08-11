@@ -19,22 +19,60 @@ from qtutils.qt.QtWidgets import *
 from qtutils import *
 import qtutils.icons
 
+from zprocess import Event
+
 import threading
 import time
 from labscript_utils.qtwidgets.InputPlotWindow import PlotWindow
 
+class PlotSelectionDialog(QDialog):
+    def __init__(self, parent=None, plot_identifiers=None):
+        super().__init__(parent)
+        self.setWindowTitle("Select Plot")
 
+        self.layout = QVBoxLayout(self)
+        self.plot_selector = QComboBox(self)
+        self.plot_selector.addItem("New Plot")
+        if plot_identifiers:
+            self.plot_selector.addItems(plot_identifiers)
+
+        self.layout.addWidget(self.plot_selector)
+
+        self.buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, Qt.Horizontal, self)
+        self.buttons.accepted.connect(self.accept)
+        self.buttons.rejected.connect(self.reject)
+        self.layout.addWidget(self.buttons)
+
+    def selected_plot(self):
+        return self.plot_selector.currentText() if self.plot_selector.currentText() != "New Plot" else None
 class AnalogInput(QWidget):
-    def __init__(self, device_name, hardware_name, connection_name='-', display_name=None, horizontal_alignment=False, parent=None):
+    def __init__(
+        self, 
+        device_name, 
+        hardware_name,
+        connection_name='-',
+        horizontal_alignment=False, 
+        parent=None
+    ):
         QWidget.__init__(self, parent)
 
-        self.plot = None
         self._device_name = device_name
         self._connection_name = connection_name
         self._hardware_name = hardware_name
-        self.win = None
+        
+        self.plot = None
+        self.to_child = None
+        self.from_child = None
 
-        label_text = (self._hardware_name + '\n' + self._connection_name) if display_name is None else display_name
+        self.plot_process = None
+        self.plot_identifier = None
+        if connection_name != '-':
+            self.plot_line_legend_label = f"{device_name}_{connection_name}"
+        else:
+            self.plot_line_legend_label = f"{device_name}_{hardware_name}"
+    
+        label_text = (self._hardware_name + '\n' + self._connection_name)
+        
         self._label = QLabel(label_text)
         self._label.setAlignment(Qt.AlignCenter)
         self._label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Minimum)
@@ -105,38 +143,125 @@ class AnalogInput(QWidget):
         else:
             text = "no value"
         self._line_edit.setText(text)
+    
+    @inmain_decorator(True)
+    def set_max_data(self, data):
+        if data is not None and self.plot is not None:
+            ipc_msg = {
+                'cmd': 'set_MAX_DATA',
+                'plot_id': self.plot_identifier,
+                'data': data
+            }
+            self.to_child.put(ipc_msg)
+
+    @inmain_decorator(True)
+    def set_buffer(self, data):
+        if data is not None and self.plot is not None:
+            ipc_msg = {
+                'cmd': "update_plot",
+                'plot_id': self.plot_identifier,
+                'line_id': self.plot_line_legend_label,
+                'data': data
+            }
+            self.to_child.put(ipc_msg)
 
     def _check_plot_window(self):
-        while self.win is not None:
-            time.sleep(0.1)
-            if self.from_child.get() == "closed":
-                self.win = None
+        while self.plot is not None:
+            event_signal = self.stop_event.wait("plotting_process")
+            if event_signal == "closed":
+                self.plot_process.KillInstance()
+                self.plot = None
+                self.plot_process = None
+                self.plot_identifier = None
                 self.to_child = None
                 self.from_child = None
 
     def open_plot_window(self):
-        if self.win is None:
-            self.win = PlotWindow()
-            self.to_child, self.from_child = self.win.start(self._connection_name, self._hardware_name, self._device_name)
+        if self.plot is None:
+            self.stop_event = Event("stop", role="wait")
 
+            self.plot_process = PlotWindow().Instance()
+            self.to_child, self.from_child = self.plot_process.to_child, self.plot_process.from_child
+            
+            ipc_msg ={'cmd': 'get_plots'}
+            self.to_child.put(ipc_msg)
+            open_plots = self.from_child.get()
+            self.show_plot_selection_dialog(open_plots)
+
+            ipc_msg = {
+                'cmd': "add_plot",
+                'plot_id': self.plot_identifier,
+                'line_id': self.plot_line_legend_label,
+            }
+            self.to_child.put(ipc_msg)
+            
+            self.plot = True
             check_plot_window_thread = threading.Thread(target=self._check_plot_window)
             check_plot_window_thread.daemon = True
             check_plot_window_thread.start()
         else:
-            self.to_child.put('focus')
+            ipc_msg = {'cmd': 'get_plots'}
+            self.to_child.put(ipc_msg)
+    
+    def prompt_plot_identifier(self):
+        text, ok = QInputDialog.getText(self, 'Input Plot Identifier', 'Enter plot identifier:')
+        if ok and text:
+            self.plot_identifier = text
 
+    @inmain_decorator(True)
+    def show_plot_selection_dialog(self, plot_identifiers):
+        if not plot_identifiers:
+            self.prompt_plot_identifier()
+            return
+        dialog = PlotSelectionDialog(self, plot_identifiers)
+        if dialog.exec_() == QDialog.Accepted:
+            plot_identifier = dialog.selected_plot()
+            if plot_identifier:
+                self.plot_identifier = plot_identifier
+            else:
+                self.prompt_plot_identifier()
 
-# A simple test!
-if __name__ == '__main__':
+import numpy as np
 
-    qapplication = QApplication(sys.argv)
+class AnalogInputTest(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Analog Input Test")
+        self.layout = QVBoxLayout(self)
 
-    window = QWidget()
-    layout = QVBoxLayout(window)
-    button = AnalogInput('AI1', 'AI1')
+        # Create multiple AnalogInput widgets
+        self.ai1 = AnalogInput("Device1", "Hardware1", "Connection1")
+        self.ai2 = AnalogInput("Device1", "Hardware2", "Connection2")
+        self.ai3 = AnalogInput("Device2", "Hardware3", "Connection3")
 
-    layout.addWidget(button)
+        self.layout.addWidget(self.ai1)
+        self.layout.addWidget(self.ai2)
+        self.layout.addWidget(self.ai3)
 
-    window.show()
+        self.simulate_data()
 
-    sys.exit(qapplication.exec_())
+    # Simulate data for each AnalogInput
+    def simulate_data(self):
+        def update_data():
+            while True:
+                self.ai1.set_value(np.random.rand())
+                self.ai2.set_value(np.random.rand())
+                self.ai3.set_value(np.random.rand())
+
+                # set_buffer updates only occur if plots are open
+                self.ai1.set_buffer(np.random.rand(10000))
+                self.ai2.set_buffer(np.random.rand(10000))
+                self.ai3.set_buffer(np.random.rand(10000))
+
+                time.sleep(0.1)
+
+        thread = threading.Thread(target=update_data)
+        thread.daemon = True
+        thread.start()
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    test_window = AnalogInputTest()
+    test_window.show()
+    sys.exit(app.exec_())
+
