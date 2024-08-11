@@ -25,16 +25,6 @@ import threading
 import time
 from labscript_utils.qtwidgets.InputPlotWindow import PlotWindow
 
-# TODO:
-# 1. Clean up the plot update code in InputPlotWindow. Really bad right now 
-#   - support both MAX_PLOT_DATA and a cutoff at the end of each buffered mode shot
-# 2. Allow the user to specify different params
-#   - scroll on the axis to zoom in
-#   - allow user to select the region of interest on the plot
-#   - in buffered: send the expected number of MAX_POINTS that should be collected
-#   - in manual: allow the user to set the cutoff
-# 3. add capability for app_saved_config for the input plot window
-
 class PlotSelectionDialog(QDialog):
     def __init__(self, parent=None, plot_identifiers=None):
         super().__init__(parent)
