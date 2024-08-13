@@ -164,11 +164,10 @@ class PlotWindow(Process):
                 else:
                     self.data[line_id] = new_data[new_data.size - MAX_DATA:new_data.size]
         else:    
-            if new_data.size <= self.data[line_id].size:
+            if new_data.size < MAX_DATA:
                 self.data[line_id] = np.roll(self.data[line_id], -new_data.size)
                 self.data[line_id][self.data[line_id].size - new_data.size:self.data[line_id].size] = new_data
             else:
-                # self.data[line_id] = new_data[new_data.size - self.data[line_id].size:new_data.size]
                 self.data[line_id] = new_data[:MAX_DATA]
 
         self.plot_lines[line_id].setData(self.data[line_id])
